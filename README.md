@@ -1,4 +1,4 @@
-# mautrix-whatsapp
+# mautrix-whatsapp (patched to ignore incoming message redaction events)
 A Matrix-WhatsApp puppeting bridge based on [whatsmeow](https://github.com/tulir/whatsmeow).
 
 ## Documentation
@@ -15,3 +15,8 @@ All setup and usage instructions are located on [docs.mau.fi]. Some quick links:
 
 ## Discussion
 Matrix room: [#whatsapp:maunium.net](https://matrix.to/#/#whatsapp:maunium.net)
+
+## Workflow
+	doas docker build -t whatsapp:$TAG .
+	docker tag whatsapp:$TAG noahvogt/mautrix-whatsapp:$TAG
+	docker push noahvogt/mautrix-whatsapp:$TAG
