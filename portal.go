@@ -2607,6 +2607,11 @@ func (portal *Portal) HandleMessageReaction(ctx context.Context, intent *appserv
 }
 
 func (portal *Portal) HandleMessageRevoke(ctx context.Context, user *User, info *types.MessageInfo, key *waProto.MessageKey) bool {
+	portal.zlog.Warn().Msg()
+	log := portal.zlog.With().
+		Str("action", "handle message revoke").
+		Str("message_jid", msg.JID).
+		Logger()
 	log.Warn().Msg("Intentionally skipped redact event %s", msg.JID)
 	return true
 }
