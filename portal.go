@@ -48,6 +48,7 @@ import (
 	cwebp "go.mau.fi/webp"
 	"go.mau.fi/whatsmeow"
 	waProto "go.mau.fi/whatsmeow/binary/proto"
+	"go.mau.fi/whatsmeow/proto/waMmsRetry"
 	"go.mau.fi/whatsmeow/types"
 	"go.mau.fi/whatsmeow/types/events"
 	"golang.org/x/exp/slices"
@@ -751,7 +752,7 @@ func (portal *Portal) convertMessage(ctx context.Context, intent *appservice.Int
 		return portal.convertMediaMessage(ctx, intent, source, info, waMsg.GetPtvMessage(), "video message", isBackfill)
 	case waMsg.AudioMessage != nil:
 		typeName := "audio attachment"
-		if waMsg.GetAudioMessage().GetPtt() {
+		if waMsg.GetAudioMessage().GetPTT() {
 			typeName = "voice message"
 		}
 		return portal.convertMediaMessage(ctx, intent, source, info, waMsg.GetAudioMessage(), typeName, isBackfill)
@@ -2184,7 +2185,7 @@ func (portal *Portal) CreateMatrixRoom(ctx context.Context, user *User, groupInf
 		initialState = append(initialState, &event.Event{
 			Type: event.StateRoomAvatar,
 			Content: event.Content{
-				Parsed: event.RoomAvatarEventContent{URL: portal.AvatarURL},
+				Parsed: event.RoomAvatarEventContent{URL: portal.AvatarURL.CUString()},
 			},
 		})
 		portal.AvatarSet = true
@@ -2687,13 +2688,13 @@ func (r ReplyInfo) MarshalZerologObject(e *zerolog.Event) {
 }
 
 type Replyable interface {
-	GetStanzaId() string
+	GetStanzaID() string
 	GetParticipant() string
 	GetRemoteJid() string
 }
 
 func GetReply(replyable Replyable) *ReplyInfo {
-	if replyable.GetStanzaId() == "" {
+	if replyable.GetStanzaID() == "" {
 		return nil
 	}
 	sender, err := types.ParseJID(replyable.GetParticipant())
@@ -2702,7 +2703,7 @@ func GetReply(replyable Replyable) *ReplyInfo {
 	}
 	chat, _ := types.ParseJID(replyable.GetRemoteJid())
 	return &ReplyInfo{
-		MessageID: types.MessageID(replyable.GetStanzaId()),
+		MessageID: types.MessageID(replyable.GetStanzaID()),
 		Chat:      chat,
 		Sender:    sender,
 	}
@@ -2750,7 +2751,7 @@ func (portal *Portal) convertTextMessage(ctx context.Context, intent *appservice
 	}
 
 	contextInfo := msg.GetExtendedTextMessage().GetContextInfo()
-	portal.bridge.Formatter.ParseWhatsApp(ctx, portal.MXID, content, contextInfo.GetMentionedJid(), false, false)
+	portal.bridge.Formatter.ParseWhatsApp(ctx, portal.MXID, content, contextInfo.GetMentionedJID(), false, false)
 	expiresIn := time.Duration(contextInfo.GetExpiration()) * time.Second
 	extraAttrs := map[string]interface{}{}
 	extraAttrs["com.beeper.linkpreviews"] = portal.convertURLPreviewToBeeper(ctx, intent, source, msg.GetExtendedTextMessage())
@@ -2791,7 +2792,7 @@ func (portal *Portal) convertTemplateMessage(ctx context.Context, intent *appser
 				descriptions[i] = fmt.Sprintf("<%s>", button.QuickReplyButton.GetDisplayText())
 				addButtonText = true
 			case *waProto.HydratedTemplateButton_UrlButton:
-				descriptions[i] = fmt.Sprintf("[%s](%s)", button.UrlButton.GetDisplayText(), button.UrlButton.GetUrl())
+				descriptions[i] = fmt.Sprintf("[%s](%s)", button.UrlButton.GetDisplayText(), button.UrlButton.GetURL())
 			case *waProto.HydratedTemplateButton_CallButton:
 				descriptions[i] = fmt.Sprintf("[%s](tel:%s)", button.CallButton.GetDisplayText(), button.CallButton.GetPhoneNumber())
 			}
@@ -2832,7 +2833,7 @@ func (portal *Portal) convertTemplateMessage(ctx context.Context, intent *appser
 	if converted.Extra == nil {
 		converted.Extra = make(map[string]interface{})
 	}
-	converted.Extra["fi.mau.whatsapp.hydrated_template_id"] = tpl.GetTemplateId()
+	converted.Extra["fi.mau.whatsapp.hydrated_template_id"] = tpl.GetTemplateID()
 	return converted
 }
 
@@ -2846,7 +2847,7 @@ func (portal *Portal) convertTemplateButtonReplyMessage(ctx context.Context, int
 		},
 		Extra: map[string]interface{}{
 			"fi.mau.whatsapp.template_button_reply": map[string]interface{}{
-				"id":    msg.GetSelectedId(),
+				"id":    msg.GetSelectedID(),
 				"index": msg.GetSelectedIndex(),
 			},
 		},
@@ -2927,7 +2928,7 @@ func (portal *Portal) convertListResponseMessage(ctx context.Context, intent *ap
 		},
 		Extra: map[string]interface{}{
 			"fi.mau.whatsapp.list_reply": map[string]interface{}{
-				"row_id": msg.GetSingleSelectReply().GetSelectedRowId(),
+				"row_id": msg.GetSingleSelectReply().GetSelectedRowID(),
 			},
 		},
 		ReplyTo:   GetReply(msg.GetContextInfo()),
@@ -3024,8 +3025,8 @@ func (portal *Portal) convertPollCreationMessage(ctx context.Context, intent *ap
 			},
 		}
 	}
-	body := fmt.Sprintf("%s\n\n%s", msg.GetName(), strings.Join(optionsListText, "\n"))
-	formattedBody := fmt.Sprintf("<p>%s</p><ol>%s</ol>", event.TextToHTML(msg.GetName()), strings.Join(optionsListHTML, ""))
+	body := fmt.Sprintf("%s\n\n%s\n\n(This message is a poll. Please open WhatsApp to vote.)", msg.GetName(), strings.Join(optionsListText, "\n"))
+	formattedBody := fmt.Sprintf("<p>%s</p><ol>%s</ol><p>(This message is a poll. Please open WhatsApp to vote.)</p>", event.TextToHTML(msg.GetName()), strings.Join(optionsListHTML, ""))
 	maxChoices := int(msg.GetSelectableOptionsCount())
 	if maxChoices <= 0 {
 		maxChoices = len(optionNames)
@@ -3096,6 +3097,7 @@ func (portal *Portal) convertLiveLocationMessage(ctx context.Context, intent *ap
 	if len(msg.GetCaption()) > 0 {
 		content.Body += ": " + msg.GetCaption()
 	}
+	content.Body += "\n\nUse the WhatsApp app to see the location."
 	return &ConvertedMessage{
 		Intent:    intent,
 		Type:      event.EventMessage,
@@ -3106,7 +3108,7 @@ func (portal *Portal) convertLiveLocationMessage(ctx context.Context, intent *ap
 }
 
 func (portal *Portal) convertLocationMessage(ctx context.Context, intent *appservice.IntentAPI, msg *waProto.LocationMessage) *ConvertedMessage {
-	url := msg.GetUrl()
+	url := msg.GetURL()
 	if len(url) == 0 {
 		url = fmt.Sprintf("https://maps.google.com/?q=%.5f,%.5f", msg.GetDegreesLatitude(), msg.GetDegreesLongitude())
 	}
@@ -3131,14 +3133,14 @@ func (portal *Portal) convertLocationMessage(ctx context.Context, intent *appser
 		GeoURI:        fmt.Sprintf("geo:%.5f,%.5f", msg.GetDegreesLatitude(), msg.GetDegreesLongitude()),
 	}
 
-	if len(msg.GetJpegThumbnail()) > 0 {
-		thumbnailMime := http.DetectContentType(msg.GetJpegThumbnail())
-		uploadedThumbnail, _ := intent.UploadBytes(ctx, msg.GetJpegThumbnail(), thumbnailMime)
+	if len(msg.GetJPEGThumbnail()) > 0 {
+		thumbnailMime := http.DetectContentType(msg.GetJPEGThumbnail())
+		uploadedThumbnail, _ := intent.UploadBytes(ctx, msg.GetJPEGThumbnail(), thumbnailMime)
 		if uploadedThumbnail != nil {
-			cfg, _, _ := image.DecodeConfig(bytes.NewReader(msg.GetJpegThumbnail()))
+			cfg, _, _ := image.DecodeConfig(bytes.NewReader(msg.GetJPEGThumbnail()))
 			content.Info = &event.FileInfo{
 				ThumbnailInfo: &event.FileInfo{
-					Size:     len(msg.GetJpegThumbnail()),
+					Size:     len(msg.GetJPEGThumbnail()),
 					Width:    cfg.Width,
 					Height:   cfg.Height,
 					MimeType: thumbnailMime,
@@ -3173,9 +3175,9 @@ func (portal *Portal) convertGroupInviteMessage(ctx context.Context, intent *app
 	expiry := time.Unix(msg.GetInviteExpiration(), 0)
 	template := inviteMsg
 	var extraAttrs map[string]any
-	groupJID, err := types.ParseJID(msg.GetGroupJid())
+	groupJID, err := types.ParseJID(msg.GetGroupJID())
 	if err != nil {
-		zerolog.Ctx(ctx).Err(err).Str("invite_group_jid", msg.GetGroupJid()).Msg("Failed to parse invite group JID")
+		zerolog.Ctx(ctx).Err(err).Str("invite_group_jid", msg.GetGroupJID()).Msg("Failed to parse invite group JID")
 		template = inviteMsgBroken
 	} else {
 		extraAttrs = map[string]interface{}{
@@ -3447,7 +3449,7 @@ type MediaMessage interface {
 
 type MediaMessageWithThumbnail interface {
 	MediaMessage
-	GetJpegThumbnail() []byte
+	GetJPEGThumbnail() []byte
 }
 
 type MediaMessageWithCaption interface {
@@ -3522,8 +3524,8 @@ func (portal *Portal) convertMediaMessageContent(ctx context.Context, intent *ap
 	}
 
 	messageWithThumbnail, ok := msg.(MediaMessageWithThumbnail)
-	if ok && messageWithThumbnail.GetJpegThumbnail() != nil && (portal.bridge.Config.Bridge.WhatsappThumbnail || isGIF) {
-		thumbnailData := messageWithThumbnail.GetJpegThumbnail()
+	if ok && messageWithThumbnail.GetJPEGThumbnail() != nil && (portal.bridge.Config.Bridge.WhatsappThumbnail || isGIF) {
+		thumbnailData := messageWithThumbnail.GetJPEGThumbnail()
 		thumbnailMime := http.DetectContentType(thumbnailData)
 		thumbnailCfg, _, _ := image.DecodeConfig(bytes.NewReader(thumbnailData))
 		thumbnailSize := len(thumbnailData)
@@ -3601,7 +3603,7 @@ func (portal *Portal) convertMediaMessageContent(ctx context.Context, intent *ap
 			"duration": int(audioMessage.GetSeconds()) * 1000,
 			"waveform": waveform,
 		}
-		if audioMessage.GetPtt() || audioMessage.GetMimetype() == "audio/ogg; codecs/opus" {
+		if audioMessage.GetPTT() || audioMessage.GetMimetype() == "audio/ogg; codecs/opus" {
 			extraContent["org.matrix.msc3245.voice"] = map[string]interface{}{}
 		}
 	}
@@ -3614,7 +3616,7 @@ func (portal *Portal) convertMediaMessageContent(ctx context.Context, intent *ap
 			MsgType: event.MsgNotice,
 		}
 
-		portal.bridge.Formatter.ParseWhatsApp(ctx, portal.MXID, captionContent, msg.GetContextInfo().GetMentionedJid(), false, false)
+		portal.bridge.Formatter.ParseWhatsApp(ctx, portal.MXID, captionContent, msg.GetContextInfo().GetMentionedJID(), false, false)
 	}
 
 	return &ConvertedMessage{
@@ -3697,8 +3699,8 @@ func (portal *Portal) convertMediaMessage(ctx context.Context, intent *appservic
 			Key:       msg.GetMediaKey(),
 			Length:    int(msg.GetFileLength()),
 			Type:      whatsmeow.GetMediaType(msg),
-			SHA256:    msg.GetFileSha256(),
-			EncSHA256: msg.GetFileEncSha256(),
+			SHA256:    msg.GetFileSHA256(),
+			EncSHA256: msg.GetFileEncSHA256(),
 		}, errorText)
 	} else if errors.Is(err, whatsmeow.ErrNoURLPresent) {
 		zerolog.Ctx(ctx).Debug().Msg("No URL present error for media message, ignoring...")
@@ -3830,7 +3832,7 @@ func (portal *Portal) handleMediaRetry(retry *events.MediaRetry, source *User) {
 		portal.sendMediaRetryFailureEdit(ctx, intent, msg, err)
 		return
 	} else if retryData.GetResult() != waProto.MediaRetryNotification_SUCCESS {
-		errorName := waProto.MediaRetryNotification_ResultType_name[int32(retryData.GetResult())]
+		errorName := waMmsRetry.MediaRetryNotification_ResultType_name[int32(retryData.GetResult())]
 		if retryData.GetDirectPath() == "" {
 			log.Warn().Str("error_name", errorName).Msg("Got error response in media retry notification")
 			log.Debug().Any("error_content", retryData).Msg("Full error response content")
@@ -4411,7 +4413,7 @@ func (portal *Portal) convertMatrixPollStart(ctx context.Context, sender *User, 
 	}
 	ctxInfo := portal.generateContextInfo(ctx, content.RelatesTo)
 	var question string
-	question, ctxInfo.MentionedJid = portal.msc1767ToWhatsApp(content.PollStart.Question, true)
+	question, ctxInfo.MentionedJID = portal.msc1767ToWhatsApp(content.PollStart.Question, true)
 	if len(question) == 0 {
 		return nil, sender, nil, errPollMissingQuestion
 	}
@@ -4455,7 +4457,7 @@ func (portal *Portal) generateContextInfo(ctx context.Context, relatesTo *event.
 				Msg("Failed to get reply target from database")
 		}
 		if replyToMsg != nil && !replyToMsg.IsFakeJID() && (replyToMsg.Type == database.MsgNormal || replyToMsg.Type == database.MsgMatrixPoll || replyToMsg.Type == database.MsgBeeperGallery) {
-			ctxInfo.StanzaId = &replyToMsg.JID
+			ctxInfo.StanzaID = &replyToMsg.JID
 			ctxInfo.Participant = proto.String(replyToMsg.Sender.ToNonAD().String())
 			// Using blank content here seems to work fine on all official WhatsApp apps.
 			//
@@ -4567,7 +4569,7 @@ func (portal *Portal) convertMatrixMessage(ctx context.Context, sender *User, ev
 			return nil, sender, extraMeta, errMNoticeDisabled
 		}
 		if content.Format == event.FormatHTML {
-			text, ctxInfo.MentionedJid = portal.bridge.Formatter.ParseMatrix(content.FormattedBody, content.Mentions)
+			text, ctxInfo.MentionedJID = portal.bridge.Formatter.ParseMatrix(content.FormattedBody, content.Mentions)
 		}
 		if content.MsgType == event.MsgEmote && !relaybotFormatted {
 			text = "/me " + text
@@ -4580,7 +4582,7 @@ func (portal *Portal) convertMatrixMessage(ctx context.Context, sender *User, ev
 		if ctx.Err() != nil {
 			return nil, sender, extraMeta, ctx.Err()
 		}
-		if ctxInfo.StanzaId == nil && ctxInfo.MentionedJid == nil && ctxInfo.Expiration == nil && !hasPreview {
+		if ctxInfo.StanzaID == nil && ctxInfo.MentionedJID == nil && ctxInfo.Expiration == nil && !hasPreview {
 			// No need for extended message
 			msg.ExtendedTextMessage = nil
 			msg.Conversation = &text
@@ -4591,17 +4593,17 @@ func (portal *Portal) convertMatrixMessage(ctx context.Context, sender *User, ev
 			return nil, sender, extraMeta, err
 		}
 		extraMeta.MediaHandle = media.Handle
-		ctxInfo.MentionedJid = media.MentionedJIDs
+		ctxInfo.MentionedJID = media.MentionedJIDs
 		msg.ImageMessage = &waProto.ImageMessage{
 			ContextInfo:   ctxInfo,
 			Caption:       &media.Caption,
-			JpegThumbnail: media.Thumbnail,
-			Url:           &media.URL,
+			JPEGThumbnail: media.Thumbnail,
+			URL:           &media.URL,
 			DirectPath:    &media.DirectPath,
 			MediaKey:      media.MediaKey,
 			Mimetype:      &content.GetInfo().MimeType,
-			FileEncSha256: media.FileEncSHA256,
-			FileSha256:    media.FileSHA256,
+			FileEncSHA256: media.FileEncSHA256,
+			FileSHA256:    media.FileSHA256,
 			FileLength:    proto.Uint64(uint64(media.FileLength)),
 		}
 	case event.MsgBeeperGallery:
@@ -4621,13 +4623,13 @@ func (portal *Portal) convertMatrixMessage(ctx context.Context, sender *User, ev
 			}
 			imageMsg := &waProto.ImageMessage{
 				ContextInfo:   ctxInfo,
-				JpegThumbnail: media.Thumbnail,
-				Url:           &media.URL,
+				JPEGThumbnail: media.Thumbnail,
+				URL:           &media.URL,
 				DirectPath:    &media.DirectPath,
 				MediaKey:      media.MediaKey,
 				Mimetype:      &part.GetInfo().MimeType,
-				FileEncSha256: media.FileEncSHA256,
-				FileSha256:    media.FileSHA256,
+				FileEncSHA256: media.FileEncSHA256,
+				FileSHA256:    media.FileSHA256,
 				FileLength:    proto.Uint64(uint64(media.FileLength)),
 			}
 			if i == 0 {
@@ -4644,16 +4646,16 @@ func (portal *Portal) convertMatrixMessage(ctx context.Context, sender *User, ev
 			return nil, sender, extraMeta, err
 		}
 		extraMeta.MediaHandle = media.Handle
-		ctxInfo.MentionedJid = media.MentionedJIDs
+		ctxInfo.MentionedJID = media.MentionedJIDs
 		msg.StickerMessage = &waProto.StickerMessage{
 			ContextInfo:   ctxInfo,
 			PngThumbnail:  media.Thumbnail,
-			Url:           &media.URL,
+			URL:           &media.URL,
 			DirectPath:    &media.DirectPath,
 			MediaKey:      media.MediaKey,
 			Mimetype:      &content.GetInfo().MimeType,
-			FileEncSha256: media.FileEncSHA256,
-			FileSha256:    media.FileSHA256,
+			FileEncSHA256: media.FileEncSHA256,
+			FileSHA256:    media.FileSHA256,
 			FileLength:    proto.Uint64(uint64(media.FileLength)),
 		}
 	case event.MsgVideo:
@@ -4664,19 +4666,19 @@ func (portal *Portal) convertMatrixMessage(ctx context.Context, sender *User, ev
 		}
 		duration := uint32(content.GetInfo().Duration / 1000)
 		extraMeta.MediaHandle = media.Handle
-		ctxInfo.MentionedJid = media.MentionedJIDs
+		ctxInfo.MentionedJID = media.MentionedJIDs
 		msg.VideoMessage = &waProto.VideoMessage{
 			ContextInfo:   ctxInfo,
 			Caption:       &media.Caption,
-			JpegThumbnail: media.Thumbnail,
-			Url:           &media.URL,
+			JPEGThumbnail: media.Thumbnail,
+			URL:           &media.URL,
 			DirectPath:    &media.DirectPath,
 			MediaKey:      media.MediaKey,
 			Mimetype:      &content.GetInfo().MimeType,
 			GifPlayback:   &gifPlayback,
 			Seconds:       &duration,
-			FileEncSha256: media.FileEncSHA256,
-			FileSha256:    media.FileSHA256,
+			FileEncSHA256: media.FileEncSHA256,
+			FileSHA256:    media.FileSHA256,
 			FileLength:    proto.Uint64(uint64(media.FileLength)),
 		}
 	case event.MsgAudio:
@@ -4688,19 +4690,19 @@ func (portal *Portal) convertMatrixMessage(ctx context.Context, sender *User, ev
 		duration := uint32(content.GetInfo().Duration / 1000)
 		msg.AudioMessage = &waProto.AudioMessage{
 			ContextInfo:   ctxInfo,
-			Url:           &media.URL,
+			URL:           &media.URL,
 			DirectPath:    &media.DirectPath,
 			MediaKey:      media.MediaKey,
 			Mimetype:      &content.GetInfo().MimeType,
 			Seconds:       &duration,
-			FileEncSha256: media.FileEncSHA256,
-			FileSha256:    media.FileSHA256,
+			FileEncSHA256: media.FileEncSHA256,
+			FileSHA256:    media.FileSHA256,
 			FileLength:    proto.Uint64(uint64(media.FileLength)),
 		}
 		_, isMSC3245Voice := evt.Content.Raw["org.matrix.msc3245.voice"]
 		if isMSC3245Voice {
 			msg.AudioMessage.Waveform = getUnstableWaveform(evt.Content.Raw)
-			msg.AudioMessage.Ptt = proto.Bool(true)
+			msg.AudioMessage.PTT = proto.Bool(true)
 			// hacky hack to add the codecs param that whatsapp seems to require
 			msg.AudioMessage.Mimetype = proto.String(addCodecToMime(content.GetInfo().MimeType, "opus"))
 		}
@@ -4713,15 +4715,15 @@ func (portal *Portal) convertMatrixMessage(ctx context.Context, sender *User, ev
 		msg.DocumentMessage = &waProto.DocumentMessage{
 			ContextInfo:   ctxInfo,
 			Caption:       &media.Caption,
-			JpegThumbnail: media.Thumbnail,
-			Url:           &media.URL,
+			JPEGThumbnail: media.Thumbnail,
+			URL:           &media.URL,
 			DirectPath:    &media.DirectPath,
 			Title:         &media.FileName,
 			FileName:      &media.FileName,
 			MediaKey:      media.MediaKey,
 			Mimetype:      &content.GetInfo().MimeType,
-			FileEncSha256: media.FileEncSHA256,
-			FileSha256:    media.FileSHA256,
+			FileEncSHA256: media.FileEncSHA256,
+			FileSHA256:    media.FileSHA256,
 			FileLength:    proto.Uint64(uint64(media.FileLength)),
 		}
 		if media.Caption != "" {
@@ -4754,12 +4756,12 @@ func (portal *Portal) convertMatrixMessage(ctx context.Context, sender *User, ev
 					ProtocolMessage: &waProto.ProtocolMessage{
 						Key: &waProto.MessageKey{
 							FromMe:    proto.Bool(true),
-							Id:        proto.String(editRootMsg.JID),
-							RemoteJid: proto.String(portal.Key.JID.String()),
+							ID:        proto.String(editRootMsg.JID),
+							RemoteJID: proto.String(portal.Key.JID.String()),
 						},
 						Type:          waProto.ProtocolMessage_MESSAGE_EDIT.Enum(),
 						EditedMessage: msg,
-						TimestampMs:   proto.Int64(evt.Timestamp),
+						TimestampMS:   proto.Int64(evt.Timestamp),
 					},
 				},
 			},
@@ -4998,13 +5000,13 @@ func (portal *Portal) sendReactionToWhatsApp(sender *User, id types.MessageID, t
 	return sender.Client.SendMessage(ctx, portal.Key.JID, &waProto.Message{
 		ReactionMessage: &waProto.ReactionMessage{
 			Key: &waProto.MessageKey{
-				RemoteJid:   proto.String(portal.Key.JID.String()),
+				RemoteJID:   proto.String(portal.Key.JID.String()),
 				FromMe:      proto.Bool(target.Sender.User == sender.JID.User),
-				Id:          proto.String(target.JID),
+				ID:          proto.String(target.JID),
 				Participant: messageKeyParticipant,
 			},
 			Text:              proto.String(key),
-			SenderTimestampMs: proto.Int64(timestamp),
+			SenderTimestampMS: proto.Int64(timestamp),
 		},
 	}, whatsmeow.SendRequestExtra{ID: id})
 }
@@ -5090,8 +5092,8 @@ func (portal *Portal) HandleMatrixRedaction(ctx context.Context, sender *User, e
 	} else {
 		key := &waProto.MessageKey{
 			FromMe:    proto.Bool(true),
-			Id:        proto.String(msg.JID),
-			RemoteJid: proto.String(portal.Key.JID.String()),
+			ID:        proto.String(msg.JID),
+			RemoteJID: proto.String(portal.Key.JID.String()),
 		}
 		if msg.Sender.User != sender.JID.User {
 			if portal.IsPrivateChat() {
@@ -5465,18 +5467,19 @@ func (portal *Portal) HandleMatrixMeta(brSender bridge.User, evt *event.Event) {
 	case *event.RoomAvatarEventContent:
 		portal.avatarLock.Lock()
 		defer portal.avatarLock.Unlock()
-		if content.URL == portal.AvatarURL || (content.URL.IsEmpty() && portal.Avatar == "remove") {
+		url := content.URL.ParseOrIgnore()
+		if url == portal.AvatarURL || (url.IsEmpty() && portal.Avatar == "remove") {
 			return
 		}
 		var data []byte
 		var err error
-		if !content.URL.IsEmpty() {
-			data, err = portal.MainIntent().DownloadBytes(ctx, content.URL)
+		if !url.IsEmpty() {
+			data, err = portal.MainIntent().DownloadBytes(ctx, url)
 			if err != nil {
-				log.Err(err).Stringer("mxc_uri", content.URL).Msg("Failed to download updated avatar")
+				log.Err(err).Stringer("mxc_uri", url).Msg("Failed to download updated avatar")
 				return
 			}
-			log.Debug().Stringer("mxc_uri", content.URL).Msg("Updating group avatar")
+			log.Debug().Stringer("mxc_uri", url).Msg("Updating group avatar")
 		} else {
 			log.Debug().Msg("Removing group avatar")
 		}
@@ -5487,7 +5490,7 @@ func (portal *Portal) HandleMatrixMeta(brSender bridge.User, evt *event.Event) {
 		}
 		log.Debug().Str("avatar_id", newID).Msg("Successfully updated group avatar")
 		portal.Avatar = newID
-		portal.AvatarURL = content.URL
+		portal.AvatarURL = url
 	default:
 		log.Debug().Type("content_type", content).Msg("Ignoring unknown metadata event type")
 		return
