@@ -1014,7 +1014,9 @@ func (portal *Portal) handleMessage(ctx context.Context, source *User, evt *even
 			log.Info().
 				Str("timer", converted.ExpiresIn.String()).
 				Msg("Implicitly enabling disappearing messages as incoming message is disappearing")
-			portal.implicitlyEnableDisappearingMessages(ctx, converted.ExpiresIn)
+			// disable disappearing messages
+			//
+			// portal.implicitlyEnableDisappearingMessages(ctx, converted.ExpiresIn)
 		}
 		if evt.Info.IsIncomingBroadcast() {
 			if converted.Extra == nil {
@@ -1028,7 +1030,9 @@ func (portal *Portal) handleMessage(ctx context.Context, source *User, evt *even
 		var eventID id.EventID
 		var lastEventID id.EventID
 		if existingMsg != nil {
-			portal.MarkDisappearing(ctx, existingMsg.MXID, converted.ExpiresIn, evt.Info.Timestamp)
+			// disable disappearing messages
+			//
+			// portal.MarkDisappearing(ctx, existingMsg.MXID, converted.ExpiresIn, evt.Info.Timestamp)
 			converted.Content.SetEdit(existingMsg.MXID)
 		} else if converted.ReplyTo != nil {
 			portal.SetReply(ctx, converted.Content, converted.ReplyTo, false)
@@ -1058,7 +1062,9 @@ func (portal *Portal) handleMessage(ctx context.Context, source *User, evt *even
 			log.Err(err).Msg("Failed to send WhatsApp message to Matrix")
 		} else {
 			if editTargetMsg == nil {
-				portal.MarkDisappearing(ctx, resp.EventID, converted.ExpiresIn, evt.Info.Timestamp)
+				// disable disappearing messages
+				//
+				// portal.MarkDisappearing(ctx, resp.EventID, converted.ExpiresIn, evt.Info.Timestamp)
 			}
 			eventID = resp.EventID
 			lastEventID = eventID
@@ -1074,7 +1080,9 @@ func (portal *Portal) handleMessage(ctx context.Context, source *User, evt *even
 			if err != nil {
 				log.Err(err).Msg("Failed to send caption of WhatsApp message to Matrix")
 			} else {
-				portal.MarkDisappearing(ctx, resp.EventID, converted.ExpiresIn, evt.Info.Timestamp)
+				// disable disappearing messages
+				//
+				// portal.MarkDisappearing(ctx, resp.EventID, converted.ExpiresIn, evt.Info.Timestamp)
 				lastEventID = resp.EventID
 			}
 		}
@@ -1084,7 +1092,9 @@ func (portal *Portal) handleMessage(ctx context.Context, source *User, evt *even
 				if err != nil {
 					log.Err(err).Int("part_number", index+1).Msg("Failed to send sub-event of WhatsApp message to Matrix")
 				} else {
-					portal.MarkDisappearing(ctx, resp.EventID, converted.ExpiresIn, evt.Info.Timestamp)
+					// disable disappearing messages
+					//
+					// portal.MarkDisappearing(ctx, resp.EventID, converted.ExpiresIn, evt.Info.Timestamp)
 					lastEventID = resp.EventID
 				}
 			}
@@ -2597,14 +2607,6 @@ func (portal *Portal) HandleMessageReaction(ctx context.Context, intent *appserv
 }
 
 func (portal *Portal) HandleMessageRevoke(ctx context.Context, user *User, info *types.MessageInfo, key *waProto.MessageKey) bool {
-	log := zerolog.Ctx(ctx).With().Str("revoke_target_id", key.GetId()).Logger()
-	msg, err := portal.bridge.DB.Message.GetByJID(ctx, portal.Key, key.GetId())
-	if err != nil {
-		log.Err(err).Msg("Failed to get revoke target message from database")
-		return false
-	} else if msg == nil || msg.IsFakeMXID() {
-		return false
-	}
 	portal.log.Debugln("Intentionally skipped redact event %s", msg.JID)
 	return true
 }
@@ -4877,7 +4879,9 @@ func (portal *Portal) HandleMatrixMessage(ctx context.Context, sender *User, evt
 	if msg.PollCreationMessage != nil || msg.PollCreationMessageV2 != nil || msg.PollCreationMessageV3 != nil {
 		dbMsgType = database.MsgMatrixPoll
 	} else if msg.EditedMessage == nil {
-		portal.MarkDisappearing(ctx, origEvtID, time.Duration(portal.ExpirationTime)*time.Second, time.Now())
+		// disable disappearing messages
+		//
+		// portal.MarkDisappearing(ctx, origEvtID, time.Duration(portal.ExpirationTime)*time.Second, time.Now())
 	} else {
 		dbMsgType = database.MsgEdit
 	}
